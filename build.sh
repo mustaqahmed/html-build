@@ -1,30 +1,37 @@
 #!/bin/bash
-set -e
-WATTSI_LATEST=50
-export WATTSI_LATEST
-HTML_GIT_CLONE_OPTIONS=${HTML_GIT_CLONE_OPTIONS:-"--depth 1"}
+set -o errexit
+set -o nounset
+set -o pipefail
 
 # cd to the directory containing this script
 cd "$(dirname "$0")"
 DIR=$(pwd)
 
+# The latest required version of Wattsi. Update this if you change how ./build.sh invokes Wattsi.
+WATTSI_LATEST=50
+
+# Shared state variables throughout this script
+LOCAL_WATTSI=true
 DO_UPDATE=true
 USE_DOCKER=false
 VERBOSE=false
 QUIET=false
-export DO_UPDATE
-export VERBOSE
-export QUIET
+HTML_SHA=""
 
+# Can be set from the outside to customize the script, but the defaults are usually fine. (Only
+# $HTML_SOURCE is documented.) $HTML_SOURCE will be determined inside the main function.
+HTML_SOURCE=${HTML_SOURCE:-}
 HTML_CACHE=${HTML_CACHE:-$DIR/.cache}
-export HTML_CACHE
-
 HTML_TEMP=${HTML_TEMP:-$DIR/.temp}
+HTML_OUTPUT=${HTML_OUTPUT:-$DIR/output}
+HTML_GIT_CLONE_OPTIONS=${HTML_GIT_CLONE_OPTIONS:-"--depth 1"}
+
+# These are used by child scripts, and so we export them
+export HTML_CACHE
 export HTML_TEMP
 
-HTML_OUTPUT=${HTML_OUTPUT:-$DIR/output}
-export HTML_OUTPUT
-
+# Used specifically when the Dockerfile calls this script
+SKIP_BUILD_UPDATE_CHECK=${SKIP_BUILD_UPDATE_CHECK:-false}
 SHA_OVERRIDE=${SHA_OVERRIDE:-}
 
 function main {
@@ -99,7 +106,7 @@ function main {
   fi
 
   $QUIET || echo "Looking for the HTML source (set HTML_SOURCE to override)..."
-  if [ -z "$HTML_SOURCE" ]; then
+  if [[ "$HTML_SOURCE" == "" ]]; then
     PARENT_DIR=$(dirname "$DIR")
     if [ -f "$PARENT_DIR/html/source" ]; then
       HTML_SOURCE=$PARENT_DIR/html
@@ -118,10 +125,11 @@ function main {
       $QUIET || echo "Found $HTML_SOURCE (from HTML_SOURCE)..."
     else
       $QUIET || echo "Looked in the $HTML_SOURCE directory but didn't find HTML source there..."
-      unset HTML_SOURCE
+      HTML_SOURCE=""
       chooseRepo
     fi
   fi
+
   export HTML_SOURCE
 
   HTML_GIT_DIR="$HTML_SOURCE/.git/"
@@ -289,7 +297,7 @@ function chooseRepo {
 }
 
 function confirmRepo {
-  if [ -n "$HTML_SOURCE" ]; then
+  if [[ "$HTML_SOURCE" != "" ]]; then
     if [ -f "$HTML_SOURCE/source" ]; then
       echo
       echo "OK, build from the $HTML_SOURCE/source file?"
@@ -298,13 +306,13 @@ function confirmRepo {
       if [[ "y" = "$yn" || "Y" = "$yn" ]]; then
         return
       else
-        unset HTML_SOURCE
+        HTML_SOURCE=""
         chooseRepo
       fi
     else
       echo
       echo "$HTML_SOURCE/source file doesn't exist. Please choose another option."
-      unset HTML_SOURCE
+      HTML_SOURCE=""
       chooseRepo
     fi
     return
@@ -324,7 +332,7 @@ function confirmRepo {
   if [[ "y" = "$yn" || "Y" = "$yn" ]]; then
     git clone "${GIT_CLONE_ARGS[@]}"
   else
-    unset HTML_SOURCE
+    HTML_SOURCE=""
     chooseRepo
   fi
 }
